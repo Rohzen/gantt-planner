@@ -1,15 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw } from 'lucide-react';
+import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText } from 'lucide-react';
 import odooService from './services/odooService';
+import LogViewer from './components/LogViewer';
 
 const GanttPlanner = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastSync, setLastSync] = useState(null);
+  const [showLogViewer, setShowLogViewer] = useState(false);
 
   const [selectedResource, setSelectedResource] = useState('Tutti');
   const [selectedType, setSelectedType] = useState('Tutti');
+  const [selectedWeek, setSelectedWeek] = useState('Tutte');
   const [showAddTask, setShowAddTask] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadMode, setUploadMode] = useState('replace');
@@ -63,6 +66,64 @@ const GanttPlanner = () => {
     }
     return next.toISOString().split('T')[0];
   };
+
+  // Week helper functions
+  const getWeekStart = (date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    const monday = new Date(d.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  };
+
+  const getWeekEnd = (weekStart) => {
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    return end;
+  };
+
+  const formatWeek = (weekStart) => {
+    const weekEnd = getWeekEnd(weekStart);
+    return `${weekStart.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })} - ${weekEnd.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+  };
+
+  const filteredTasks = useMemo(() => {
+    let filtered = tasks;
+    if (selectedResource !== 'Tutti') {
+      filtered = filtered.filter(t => t.resource === selectedResource);
+    }
+    if (selectedType !== 'Tutti') {
+      filtered = filtered.filter(t => t.type === selectedType);
+    }
+    return filtered;
+  }, [tasks, selectedResource, selectedType]);
+
+  const getAvailableWeeks = useMemo(() => {
+    if (filteredTasks.length === 0) return [];
+
+    const weeks = new Set();
+    filteredTasks.forEach(task => {
+      const taskStart = new Date(task.startDate);
+      const taskEnd = new Date(calculateEndDate(task.startDate, task.duration));
+
+      let current = getWeekStart(taskStart);
+      const endWeek = getWeekStart(taskEnd);
+
+      while (current <= endWeek) {
+        weeks.add(current.toISOString().split('T')[0]);
+        current.setDate(current.getDate() + 7);
+      }
+    });
+
+    return Array.from(weeks).sort().map(weekStr => {
+      const weekDate = new Date(weekStr);
+      return {
+        value: weekStr,
+        label: formatWeek(weekDate)
+      };
+    });
+  }, [filteredTasks]);
 
   // Parse CSV properly handling quoted fields
   const parseCSVLine = (line) => {
@@ -220,17 +281,6 @@ const GanttPlanner = () => {
     a.click();
   };
 
-  const filteredTasks = useMemo(() => {
-    let filtered = tasks;
-    if (selectedResource !== 'Tutti') {
-      filtered = filtered.filter(t => t.resource === selectedResource);
-    }
-    if (selectedType !== 'Tutti') {
-      filtered = filtered.filter(t => t.type === selectedType);
-    }
-    return filtered;
-  }, [tasks, selectedResource, selectedType]);
-
   const findNextAvailableSlot = (resource) => {
     const resourceTasks = tasks
       .filter(t => t.resource === resource)
@@ -318,46 +368,56 @@ const GanttPlanner = () => {
     setShowAddTask(false);
   };
 
-  const getTimelineRange = () => {
+  const timelineRange = useMemo(() => {
+    // If a specific week is selected, show only that week
+    if (selectedWeek !== 'Tutte') {
+      const weekStart = new Date(selectedWeek);
+      const weekEnd = getWeekEnd(weekStart);
+      return { minDate: weekStart, maxDate: weekEnd };
+    }
+
+    // Otherwise show all tasks
     if (filteredTasks.length === 0) {
       const today = new Date();
       return { minDate: today, maxDate: new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000) };
     }
 
-    const dates = filteredTasks.map(t => new Date(t.startDate));
-    const endDates = filteredTasks.map(t => new Date(calculateEndDate(t.startDate, t.duration)));
+    const dates = filteredTasks.map(t => new Date(t.startDate + 'T00:00:00'));
+    const endDates = filteredTasks.map(t => new Date(calculateEndDate(t.startDate, t.duration) + 'T00:00:00'));
     const allDates = [...dates, ...endDates];
-    
+
     const minDate = new Date(Math.min(...allDates));
     const maxDate = new Date(Math.max(...allDates));
-    
+
     minDate.setDate(minDate.getDate() - 2);
     maxDate.setDate(maxDate.getDate() + 7);
-    
-    return { minDate, maxDate };
-  };
 
-  const generateDateRange = () => {
-    const { minDate, maxDate } = getTimelineRange();
+    return { minDate, maxDate };
+  }, [filteredTasks, selectedWeek]);
+
+  const dateRange = useMemo(() => {
+    const { minDate, maxDate } = timelineRange;
     const dates = [];
     const current = new Date(minDate);
-    
+
     while (current <= maxDate) {
       dates.push(new Date(current));
       current.setDate(current.getDate() + 1);
     }
-    
+
     return dates;
-  };
+  }, [timelineRange]);
 
   const getTaskPosition = (task) => {
-    const { minDate } = getTimelineRange();
-    const startDate = new Date(task.startDate);
-    const daysDiff = Math.floor((startDate - minDate) / (1000 * 60 * 60 * 24));
-    return daysDiff;
+    const startDate = new Date(task.startDate + 'T00:00:00');
+    const minDate = new Date(timelineRange.minDate);
+    minDate.setHours(0, 0, 0, 0);
+    startDate.setHours(0, 0, 0, 0);
+
+    const daysDiff = Math.round((startDate - minDate) / (1000 * 60 * 60 * 24));
+    return Math.max(0, daysDiff);
   };
 
-  const dateRange = generateDateRange();
   const dayWidth = 40;
 
   const getTypeColor = (type) => {
@@ -373,6 +433,14 @@ const GanttPlanner = () => {
             <h1 className="text-2xl font-bold text-gray-800">Gantt Interattivo - Pianificazione Risorse</h1>
           </div>
           <div className="flex gap-2">
+            <button
+              onClick={() => setShowLogViewer(true)}
+              className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+              title="Visualizza log di sincronizzazione"
+            >
+              <FileText className="w-4 h-4" />
+              Log
+            </button>
             <button
               onClick={loadTasksFromOdoo}
               disabled={loading}
@@ -499,6 +567,20 @@ const GanttPlanner = () => {
             >
               {types.map(t => (
                 <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Settimana:</label>
+            <select
+              value={selectedWeek}
+              onChange={(e) => setSelectedWeek(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-1 text-sm"
+            >
+              <option value="Tutte">Tutte</option>
+              {getAvailableWeeks.map(week => (
+                <option key={week.value} value={week.value}>{week.label}</option>
               ))}
             </select>
           </div>
@@ -708,6 +790,8 @@ const GanttPlanner = () => {
           <span className="ml-auto">Totale attività visualizzate: <strong>{filteredTasks.length}</strong></span>
         </div>
       </div>
+
+      <LogViewer isOpen={showLogViewer} onClose={() => setShowLogViewer(false)} />
     </div>
   );
 };

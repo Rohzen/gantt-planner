@@ -9,12 +9,26 @@ This guide will help you configure the Gantt Planner to fetch tasks from your Od
 ## Prerequisites
 
 - Odoo instance running at https://encodata.erptodo.com
-- Valid Odoo username and password
+- Valid Odoo username and API key
 - Database name
 
 ## Configuration Steps
 
-### 1. Configure Environment Variables
+### 1. Generate an Odoo API Key
+
+To generate an API key in Odoo:
+
+1. Log in to your Odoo instance
+2. Click on your username in the top right corner
+3. Select **"My Profile"** or **"Preferences"**
+4. Go to the **"Account Security"** tab
+5. In the **"API Keys"** section, click **"New API Key"**
+6. Enter a description (e.g., "Gantt Planner Integration")
+7. Copy the generated API key (you won't be able to see it again!)
+
+**Note:** API keys provide more secure access than passwords and can be revoked individually without changing your password.
+
+### 2. Configure Environment Variables
 
 Edit the `.env` file in the project root with your Odoo credentials:
 
@@ -22,19 +36,19 @@ Edit the `.env` file in the project root with your Odoo credentials:
 REACT_APP_ODOO_URL=https://encodata.erptodo.com
 REACT_APP_ODOO_DB=dbencodata
 REACT_APP_ODOO_USERNAME=roberto.zanardo@encodata.com
-REACT_APP_ODOO_PASSWORD=1qaz/YGV&
+REACT_APP_ODOO_API_KEY=your_generated_api_key_here
 ```
 
 **Important:** Never commit the `.env` file to git. It's already included in `.gitignore`.
 
-### 2. Find Your Database Name
+### 3. Find Your Database Name
 
 If you don't know your database name, you can find it:
 1. Log in to Odoo web interface
 2. Check the URL after login - it often contains the database name
 3. Or contact your Odoo administrator
 
-### 3. Restart the Development Server
+### 4. Restart the Development Server
 
 After configuring `.env`, restart the development server:
 
@@ -112,7 +126,7 @@ Task Name,Resource Name,2024-11-11,3,Consulenza
 ## API Details
 
 The app uses Odoo's JSON-RPC API:
-- **Authentication**: `/web/session/authenticate`
+- **Authentication**: `/web/session/authenticate` (using API key)
 - **Data calls**: `/web/dataset/call_kw`
 
-Authentication is session-based with cookies.
+Authentication is performed using an API key (passed in the password field) and is session-based with cookies. This is more secure than using passwords directly and allows you to revoke access without changing your account password.
