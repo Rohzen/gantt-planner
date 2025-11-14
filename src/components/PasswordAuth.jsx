@@ -7,18 +7,18 @@ const PasswordAuth = ({ onAuthenticated }) => {
   const [configPassword, setConfigPassword] = useState('');
 
   useEffect(() => {
-    // Load password from config.json in public folder
+    // Load password from app-password.txt in public folder
     // Using process.env.PUBLIC_URL for GitHub Pages compatibility
-    const configPath = `${process.env.PUBLIC_URL}/config.json`;
+    const configPath = `${process.env.PUBLIC_URL}/app-password.txt`;
     fetch(configPath)
       .then(response => {
         if (!response.ok) {
           throw new Error('Config file not found');
         }
-        return response.json();
+        return response.text();
       })
-      .then(data => {
-        setConfigPassword(data.password || 'admin');
+      .then(password => {
+        setConfigPassword(password.trim() || 'admin');
       })
       .catch(err => {
         console.error('Failed to load config:', err);

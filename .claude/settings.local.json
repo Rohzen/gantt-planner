@@ -13,7 +13,9 @@
       "Bash(npm run deploy:*)",
       "Bash(npx gh-pages:*)",
       "Bash(cat:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "WebFetch(domain:rohzen.github.io)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [],
     "ask": []
