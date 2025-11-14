@@ -2,6 +2,13 @@ import axios from 'axios';
 import logger from './logger';
 
 /**
+ * CORS Proxy configuration
+ * Using allorigins.win as a free CORS proxy service
+ * Alternative: https://corsproxy.io/?
+ */
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+/**
  * Get Odoo configuration from localStorage
  * Configuration is now stored in localStorage instead of environment variables
  */
@@ -17,12 +24,27 @@ const getOdooConfig = () => {
       url: config.url,
       database: config.database,
       username: config.username,
-      apiKey: config.apiKey
+      apiKey: config.apiKey,
+      useCorsProxy: config.useCorsProxy !== false // Default to true
     };
   } catch (err) {
     logger.error('CONFIG', 'Failed to parse Odoo config from localStorage', { error: err.message });
     return null;
   }
+};
+
+/**
+ * Build URL with optional CORS proxy
+ */
+const buildUrl = (baseUrl, useCorsProxy = false) => {
+  if (useCorsProxy) {
+    logger.debug('PROXY', 'Using CORS proxy', {
+      originalUrl: baseUrl,
+      proxyUrl: CORS_PROXY + encodeURIComponent(baseUrl)
+    });
+    return CORS_PROXY + encodeURIComponent(baseUrl);
+  }
+  return baseUrl;
 };
 
 /**
@@ -88,14 +110,17 @@ class OdooService {
       });
 
       const startTime = Date.now();
+      const targetUrl = `${config.url}/web/session/authenticate`;
+      const requestUrl = buildUrl(targetUrl, config.useCorsProxy);
+
       const response = await axios.post(
-        `${config.url}/web/session/authenticate`,
+        requestUrl,
         requestPayload,
         {
           headers: {
             'Content-Type': 'application/json',
           },
-          withCredentials: true,
+          withCredentials: !config.useCorsProxy, // Don't send credentials through proxy
         }
       );
       const duration = Date.now() - startTime;
@@ -236,21 +261,25 @@ class OdooService {
         },
       };
 
+      const targetUrl = `${config.url}/web/dataset/call_kw`;
+
       logger.info('API_CALL', `Calling ${model}.${method}`, {
-        url: `${config.url}/web/dataset/call_kw`,
+        url: targetUrl,
         args: args,
         kwargs: kwargs
       });
 
       const startTime = Date.now();
+      const requestUrl = buildUrl(targetUrl, config.useCorsProxy);
+
       const response = await axios.post(
-        `${config.url}/web/dataset/call_kw`,
+        requestUrl,
         requestPayload,
         {
           headers: {
             'Content-Type': 'application/json',
           },
-          withCredentials: true,
+          withCredentials: !config.useCorsProxy, // Don't send credentials through proxy
         }
       );
       const duration = Date.now() - startTime;

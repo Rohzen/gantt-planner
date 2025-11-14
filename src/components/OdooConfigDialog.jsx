@@ -6,7 +6,8 @@ const OdooConfigDialog = ({ isOpen, onClose, onSave }) => {
     url: '',
     database: '',
     username: '',
-    apiKey: ''
+    apiKey: '',
+    useCorsProxy: true
   });
   const [errors, setErrors] = useState({});
 
@@ -176,6 +177,23 @@ const OdooConfigDialog = ({ isOpen, onClose, onSave }) => {
             )}
             <p className="mt-1 text-xs text-gray-500">
               API Key da generare in Odoo: Preferenze Utente &gt; Sicurezza Account
+            </p>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.useCorsProxy}
+                onChange={(e) => setConfig({ ...config, useCorsProxy: e.target.checked })}
+                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Usa CORS Proxy (necessario per GitHub Pages)
+              </span>
+            </label>
+            <p className="mt-1 ml-6 text-xs text-gray-500">
+              Abilita questa opzione se ricevi errori CORS. Il proxy inoltra le richieste per aggirare le restrizioni del browser.
             </p>
           </div>
 
