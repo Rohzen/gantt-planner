@@ -7,7 +7,8 @@ const OdooConfigDialog = ({ isOpen, onClose, onSave }) => {
     database: '',
     username: '',
     apiKey: '',
-    useCorsProxy: true
+    useCorsProxy: true,
+    corsProxyUrl: 'https://corsproxy.io/?'
   });
   const [errors, setErrors] = useState({});
 
@@ -196,6 +197,24 @@ const OdooConfigDialog = ({ isOpen, onClose, onSave }) => {
               Abilita questa opzione se ricevi errori CORS. Il proxy inoltra le richieste per aggirare le restrizioni del browser.
             </p>
           </div>
+
+          {config.useCorsProxy && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                URL CORS Proxy
+              </label>
+              <input
+                type="text"
+                value={config.corsProxyUrl}
+                onChange={(e) => setConfig({ ...config, corsProxyUrl: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                placeholder="https://corsproxy.io/?"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Default: https://corsproxy.io/? | Per proxy personalizzato: vedi cartella cors-proxy
+              </p>
+            </div>
+          )}
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-800">

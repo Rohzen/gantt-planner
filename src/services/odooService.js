@@ -3,10 +3,10 @@ import logger from './logger';
 
 /**
  * CORS Proxy configuration
- * Using corsproxy.io as a reliable CORS proxy service
- * This proxy properly handles CORS headers for cross-origin requests
+ * Default: corsproxy.io (free public proxy)
+ * Recommended: Deploy your own proxy (see cors-proxy folder)
  */
-const CORS_PROXY = 'https://corsproxy.io/?';
+const DEFAULT_CORS_PROXY = 'https://corsproxy.io/?';
 
 /**
  * Get Odoo configuration from localStorage
@@ -25,7 +25,8 @@ const getOdooConfig = () => {
       database: config.database,
       username: config.username,
       apiKey: config.apiKey,
-      useCorsProxy: config.useCorsProxy !== false // Default to true
+      useCorsProxy: config.useCorsProxy !== false, // Default to true
+      corsProxyUrl: config.corsProxyUrl || DEFAULT_CORS_PROXY // Allow custom proxy
     };
   } catch (err) {
     logger.error('CONFIG', 'Failed to parse Odoo config from localStorage', { error: err.message });
@@ -36,12 +37,13 @@ const getOdooConfig = () => {
 /**
  * Build URL with optional CORS proxy
  */
-const buildUrl = (baseUrl, useCorsProxy = false) => {
+const buildUrl = (baseUrl, useCorsProxy = false, corsProxyUrl = DEFAULT_CORS_PROXY) => {
   if (useCorsProxy) {
-    const proxyUrl = CORS_PROXY + baseUrl;
+    const proxyUrl = corsProxyUrl + baseUrl;
     logger.debug('PROXY', 'Using CORS proxy', {
       originalUrl: baseUrl,
-      proxyUrl: proxyUrl
+      proxyUrl: proxyUrl,
+      proxyService: corsProxyUrl
     });
     return proxyUrl;
   }
@@ -112,7 +114,7 @@ class OdooService {
 
       const startTime = Date.now();
       const targetUrl = `${config.url}/web/session/authenticate`;
-      const requestUrl = buildUrl(targetUrl, config.useCorsProxy);
+      const requestUrl = buildUrl(targetUrl, config.useCorsProxy, config.corsProxyUrl);
 
       const response = await axios.post(
         requestUrl,
@@ -271,7 +273,7 @@ class OdooService {
       });
 
       const startTime = Date.now();
-      const requestUrl = buildUrl(targetUrl, config.useCorsProxy);
+      const requestUrl = buildUrl(targetUrl, config.useCorsProxy, config.corsProxyUrl);
 
       const response = await axios.post(
         requestUrl,

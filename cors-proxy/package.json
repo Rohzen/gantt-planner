@@ -1,0 +1,14 @@
+{
+  "name": "cors-proxy",
+  "version": "1.0.0",
+  "description": "Simple CORS proxy for Odoo API",
+  "main": "api/proxy.js",
+  "scripts": {
+    "start": "node api/proxy.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "axios": "^1.6.0"
+  }
+}
