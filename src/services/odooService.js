@@ -136,40 +136,56 @@ class OdooService {
       });
 
       logger.debug('AUTH', 'Response headers', response.headers);
+      logger.debug('AUTH', 'Full response data', response.data);
 
-      if (response.data.error) {
-        logger.error('AUTH', 'Odoo returned an error', {
-          error: response.data.error,
-          errorMessage: response.data.error.data?.message,
-          errorCode: response.data.error.code,
-          fullResponse: response.data
-        });
-        throw new Error(response.data.error.data?.message || 'Authentication error from Odoo');
+      // Handle case where proxy might wrap the response
+      let responseData = response.data;
+
+      // Some proxies might return the response as a string, try to parse it
+      if (typeof responseData === 'string') {
+        try {
+          responseData = JSON.parse(responseData);
+          logger.debug('AUTH', 'Parsed string response to JSON', responseData);
+        } catch (e) {
+          logger.error('AUTH', 'Failed to parse string response', { response: responseData });
+        }
       }
 
-      if (response.data.result && response.data.result.uid) {
-        this.uid = response.data.result.uid;
-        this.sessionId = response.data.result.session_id;
+      if (responseData.error) {
+        logger.error('AUTH', 'Odoo returned an error', {
+          error: responseData.error,
+          errorMessage: responseData.error.data?.message,
+          errorCode: responseData.error.code,
+          fullResponse: responseData
+        });
+        throw new Error(responseData.error.data?.message || 'Authentication error from Odoo');
+      }
+
+      if (responseData.result && responseData.result.uid) {
+        this.uid = responseData.result.uid;
+        this.sessionId = responseData.result.session_id;
 
         logger.info('AUTH', 'Authentication SUCCESSFUL', {
           uid: this.uid,
           sessionId: this.sessionId ? this.sessionId.substring(0, 10) + '...' : 'NONE',
-          username: response.data.result.username,
-          isSystem: response.data.result.is_system,
-          partnerDisplayName: response.data.result.partner_display_name
+          username: responseData.result.username,
+          isSystem: responseData.result.is_system,
+          partnerDisplayName: responseData.result.partner_display_name
         });
 
         logger.debug('AUTH', 'Full authentication result', {
-          ...response.data.result,
+          ...responseData.result,
           session_id: this.sessionId ? this.sessionId.substring(0, 10) + '...' : 'NONE'
         });
 
         return true;
       } else {
         logger.error('AUTH', 'Authentication failed - No UID in response', {
-          hasResult: !!response.data.result,
-          result: response.data.result,
-          fullResponse: response.data
+          hasResult: !!responseData.result,
+          result: responseData.result,
+          fullResponse: responseData,
+          responseType: typeof responseData,
+          responseKeys: Object.keys(responseData || {})
         });
         throw new Error('Authentication failed - No UID returned');
       }
@@ -293,19 +309,34 @@ class OdooService {
         hasError: !!response.data.error
       });
 
-      if (response.data.error) {
+      logger.debug('API_CALL', 'Full response data', response.data);
+
+      // Handle case where proxy might wrap the response
+      let responseData = response.data;
+
+      // Some proxies might return the response as a string, try to parse it
+      if (typeof responseData === 'string') {
+        try {
+          responseData = JSON.parse(responseData);
+          logger.debug('API_CALL', 'Parsed string response to JSON', responseData);
+        } catch (e) {
+          logger.error('API_CALL', 'Failed to parse string response', { response: responseData });
+        }
+      }
+
+      if (responseData.error) {
         logger.error('API_CALL', 'Odoo API returned an error', {
           model,
           method,
-          error: response.data.error,
-          errorMessage: response.data.error.data?.message,
-          errorCode: response.data.error.code,
-          errorDebug: response.data.error.data?.debug
+          error: responseData.error,
+          errorMessage: responseData.error.data?.message,
+          errorCode: responseData.error.code,
+          errorDebug: responseData.error.data?.debug
         });
-        throw new Error(response.data.error.data.message || 'Odoo API error');
+        throw new Error(responseData.error.data.message || 'Odoo API error');
       }
 
-      const result = response.data.result;
+      const result = responseData.result;
       logger.debug('API_CALL', `API call successful for ${model}.${method}`, {
         resultType: Array.isArray(result) ? 'array' : typeof result,
         resultLength: Array.isArray(result) ? result.length : undefined,
