@@ -2,8 +2,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText } from 'lucide-react';
 import odooService from './services/odooService';
 import LogViewer from './components/LogViewer';
+import PasswordAuth from './components/PasswordAuth';
 
 const GanttPlanner = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -31,10 +33,39 @@ const GanttPlanner = () => {
 
   const types = ['Tutti', 'Consulenza', 'Sviluppo'];
 
-  // Fetch tasks from Odoo on component mount
+  // Check authentication on mount
   useEffect(() => {
-    loadTasksFromOdoo();
+    const authenticated = sessionStorage.getItem('gantt_authenticated');
+    if (authenticated === 'true') {
+      setIsAuthenticated(true);
+    }
   }, []);
+
+  // Load tasks from localStorage on mount
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const savedTasks = localStorage.getItem('gantt_tasks');
+    if (savedTasks) {
+      try {
+        const parsedTasks = JSON.parse(savedTasks);
+        setTasks(parsedTasks);
+        setLoading(false);
+      } catch (err) {
+        console.error('Failed to load saved tasks:', err);
+        loadTasksFromOdoo();
+      }
+    } else {
+      loadTasksFromOdoo();
+    }
+  }, [isAuthenticated]);
+
+  // Save tasks to localStorage whenever they change
+  useEffect(() => {
+    if (tasks.length > 0) {
+      localStorage.setItem('gantt_tasks', JSON.stringify(tasks));
+    }
+  }, [tasks]);
 
   const loadTasksFromOdoo = async () => {
     setLoading(true);
@@ -423,6 +454,15 @@ const GanttPlanner = () => {
   const getTypeColor = (type) => {
     return type === 'Sviluppo' ? 'bg-green-500' : 'bg-blue-500';
   };
+
+  const handleAuthenticated = () => {
+    setIsAuthenticated(true);
+  };
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <PasswordAuth onAuthenticated={handleAuthenticated} />;
+  }
 
   return (
     <div className="w-full h-screen bg-gray-50 flex flex-col">
