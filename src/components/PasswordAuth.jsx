@@ -7,9 +7,16 @@ const PasswordAuth = ({ onAuthenticated }) => {
   const [configPassword, setConfigPassword] = useState('');
 
   useEffect(() => {
-    // Load password from config.json
-    fetch('/config.json')
-      .then(response => response.json())
+    // Load password from config.json in public folder
+    // Using process.env.PUBLIC_URL for GitHub Pages compatibility
+    const configPath = `${process.env.PUBLIC_URL}/config.json`;
+    fetch(configPath)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Config file not found');
+        }
+        return response.json();
+      })
       .then(data => {
         setConfigPassword(data.password || 'admin');
       })

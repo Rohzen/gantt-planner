@@ -7,7 +7,8 @@
       "Bash(ren:*)",
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
-      "Bash(npm start)"
+      "Bash(npm start)",
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": []
