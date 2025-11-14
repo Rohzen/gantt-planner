@@ -8,7 +8,12 @@
       "Bash(npm uninstall:*)",
       "Bash(npm install:*)",
       "Bash(npm start)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(npx gh-pages:*)",
+      "Bash(cat:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

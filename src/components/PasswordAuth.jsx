@@ -84,12 +84,6 @@ const PasswordAuth = ({ onAuthenticated }) => {
             Accedi
           </button>
         </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">
-            La password è configurabile nel file config.json
-          </p>
-        </div>
       </div>
     </div>
   );

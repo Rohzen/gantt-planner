@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText } from 'lucide-react';
+import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText, LogOut } from 'lucide-react';
 import odooService from './services/odooService';
 import LogViewer from './components/LogViewer';
 import PasswordAuth from './components/PasswordAuth';
+import OdooConfigDialog from './components/OdooConfigDialog';
 
 const GanttPlanner = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -11,10 +12,12 @@ const GanttPlanner = () => {
   const [error, setError] = useState(null);
   const [lastSync, setLastSync] = useState(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
+  const [showOdooConfig, setShowOdooConfig] = useState(false);
 
   const [selectedResource, setSelectedResource] = useState('Tutti');
   const [selectedType, setSelectedType] = useState('Tutti');
   const [selectedWeek, setSelectedWeek] = useState('Tutte');
+  const [allocatedPercentage, setAllocatedPercentage] = useState(100);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadMode, setUploadMode] = useState('replace');
@@ -67,19 +70,61 @@ const GanttPlanner = () => {
     }
   }, [tasks]);
 
+  // Recalculate tasks when allocation percentage changes
+  useEffect(() => {
+    if (tasks.length > 0 && allocatedPercentage !== 100) {
+      const recalculatedTasks = recalculateTasksWithAllocation(tasks, allocatedPercentage);
+      // Only update if there are actual changes
+      const hasChanges = recalculatedTasks.some((rt) => {
+        const originalTask = tasks.find(t => t.id === rt.id);
+        return !originalTask || rt.duration !== originalTask.duration || rt.startDate !== originalTask.startDate;
+      });
+      if (hasChanges) {
+        setTasks(recalculatedTasks);
+      }
+    } else if (allocatedPercentage === 100 && tasks.some(t => t.originalDuration && t.duration !== t.originalDuration)) {
+      // Reset to original durations when at 100%
+      const resetTasks = recalculateTasksWithAllocation(tasks, 100);
+      setTasks(resetTasks);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allocatedPercentage]);
+
   const loadTasksFromOdoo = async () => {
     setLoading(true);
     setError(null);
     try {
       const formattedTasks = await odooService.getFormattedTasks();
-      setTasks(formattedTasks);
+      // Ensure each task has originalDuration set
+      const tasksWithOriginalDuration = formattedTasks.map(task => ({
+        ...task,
+        originalDuration: task.originalDuration || task.duration
+      }));
+      setTasks(tasksWithOriginalDuration);
       setLastSync(new Date());
     } catch (err) {
       console.error('Failed to load tasks from Odoo:', err);
-      setError('Impossibile caricare i task da Odoo. Verifica le credenziali nel file .env');
+      setError(err.message || 'Impossibile caricare i task da Odoo. Verifica la configurazione.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOdooSync = () => {
+    // Check if Odoo config exists
+    const savedConfig = localStorage.getItem('odoo_config');
+    if (!savedConfig) {
+      // No config found, show dialog
+      setShowOdooConfig(true);
+    } else {
+      // Config exists, proceed with sync
+      loadTasksFromOdoo();
+    }
+  };
+
+  const handleOdooConfigSave = (config) => {
+    // After saving config, trigger sync
+    loadTasksFromOdoo();
   };
 
   const calculateEndDate = (startDate, duration) => {
@@ -96,6 +141,60 @@ const GanttPlanner = () => {
       next.setDate(next.getDate() + 1);
     }
     return next.toISOString().split('T')[0];
+  };
+
+  // Recalculate and reschedule all tasks based on allocated percentage
+  const recalculateTasksWithAllocation = (tasksToRecalculate, percentage) => {
+    // Group tasks by resource
+    const tasksByResource = {};
+    tasksToRecalculate.forEach(task => {
+      if (!tasksByResource[task.resource]) {
+        tasksByResource[task.resource] = [];
+      }
+      tasksByResource[task.resource].push(task);
+    });
+
+    // Recalculate and reschedule for each resource
+    const recalculatedTasks = [];
+    Object.keys(tasksByResource).forEach(resource => {
+      const resourceTasks = tasksByResource[resource].sort((a, b) =>
+        new Date(a.startDate) - new Date(b.startDate)
+      );
+
+      let currentDate = resourceTasks.length > 0
+        ? resourceTasks[0].startDate
+        : new Date().toISOString().split('T')[0];
+
+      resourceTasks.forEach((task, index) => {
+        // Ensure originalDuration is set
+        const originalDuration = task.originalDuration || task.duration;
+
+        // Calculate adjusted duration based on allocation percentage
+        // If allocation is 50%, a 5-day task becomes 10 days
+        const adjustedDuration = Math.ceil(originalDuration / (percentage / 100));
+
+        // For the first task, keep its original start date
+        // For subsequent tasks, schedule after the previous task
+        if (index === 0) {
+          currentDate = task.startDate;
+        }
+
+        const recalculatedTask = {
+          ...task,
+          originalDuration: originalDuration,
+          duration: adjustedDuration,
+          startDate: currentDate
+        };
+
+        recalculatedTasks.push(recalculatedTask);
+
+        // Calculate next available date for this resource
+        const endDate = calculateEndDate(currentDate, adjustedDuration);
+        currentDate = getNextWorkday(endDate);
+      });
+    });
+
+    return recalculatedTasks;
   };
 
   // Week helper functions
@@ -250,17 +349,20 @@ const GanttPlanner = () => {
             resource: resource,
             startDate: startDate,
             duration: duration,
+            originalDuration: duration,
             type: 'Consulenza',
             dependencies: []
           };
         } else {
           // Simple format: Nome, Risorsa, DataInizio, Durata, Tipo
+          const taskDuration = parseInt(values[3]) || 1;
           task = {
             id: ++maxId,
             name: values[0] || 'Untitled',
             resource: values[1] || 'Unassigned',
             startDate: values[2] || new Date().toISOString().split('T')[0],
-            duration: parseInt(values[3]) || 1,
+            duration: taskDuration,
+            originalDuration: taskDuration,
             type: values[4] || 'Consulenza',
             dependencies: []
           };
@@ -364,12 +466,14 @@ const GanttPlanner = () => {
       newStartDate = slots.date;
     }
 
+    const taskDuration = parseInt(newTask.duration);
     const newTaskObj = {
       id: Math.max(...tasks.map(t => t.id)) + 1,
       name: newTask.name,
       resource: newTask.resource,
       startDate: newStartDate,
-      duration: parseInt(newTask.duration),
+      duration: taskDuration,
+      originalDuration: taskDuration,
       type: newTask.type,
       dependencies: newTask.insertAfter ? [parseInt(newTask.insertAfter)] : []
     };
@@ -459,6 +563,11 @@ const GanttPlanner = () => {
     setIsAuthenticated(true);
   };
 
+  const handleLogout = () => {
+    sessionStorage.removeItem('gantt_authenticated');
+    setIsAuthenticated(false);
+  };
+
   // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <PasswordAuth onAuthenticated={handleAuthenticated} />;
@@ -482,7 +591,7 @@ const GanttPlanner = () => {
               Log
             </button>
             <button
-              onClick={loadTasksFromOdoo}
+              onClick={handleOdooSync}
               disabled={loading}
               className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:bg-purple-300"
             >
@@ -509,6 +618,14 @@ const GanttPlanner = () => {
             >
               <Plus className="w-4 h-4" />
               Nuova Attività
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+              title="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
             </button>
           </div>
         </div>
@@ -608,6 +725,21 @@ const GanttPlanner = () => {
               {types.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Allocazione:</label>
+            <select
+              value={allocatedPercentage}
+              onChange={(e) => setAllocatedPercentage(parseInt(e.target.value))}
+              className="border border-gray-300 rounded px-3 py-1 text-sm bg-yellow-50"
+            >
+              <option value={100}>100%</option>
+              <option value={80}>80%</option>
+              <option value={70}>70%</option>
+              <option value={60}>60%</option>
+              <option value={50}>50%</option>
             </select>
           </div>
 
@@ -832,6 +964,11 @@ const GanttPlanner = () => {
       </div>
 
       <LogViewer isOpen={showLogViewer} onClose={() => setShowLogViewer(false)} />
+      <OdooConfigDialog
+        isOpen={showOdooConfig}
+        onClose={() => setShowOdooConfig(false)}
+        onSave={handleOdooConfigSave}
+      />
     </div>
   );
 };

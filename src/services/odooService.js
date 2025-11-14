@@ -1,19 +1,29 @@
 import axios from 'axios';
 import logger from './logger';
 
-const ODOO_URL = process.env.REACT_APP_ODOO_URL;
-const ODOO_DB = process.env.REACT_APP_ODOO_DB;
-const ODOO_USERNAME = process.env.REACT_APP_ODOO_USERNAME;
-const ODOO_API_KEY = process.env.REACT_APP_ODOO_API_KEY;
+/**
+ * Get Odoo configuration from localStorage
+ * Configuration is now stored in localStorage instead of environment variables
+ */
+const getOdooConfig = () => {
+  const savedConfig = localStorage.getItem('odoo_config');
+  if (!savedConfig) {
+    return null;
+  }
 
-// Log configuration at startup
-logger.info('CONFIG', 'Odoo Service Configuration', {
-  url: ODOO_URL,
-  database: ODOO_DB,
-  username: ODOO_USERNAME,
-  hasApiKey: !!ODOO_API_KEY,
-  apiKeyLength: ODOO_API_KEY ? ODOO_API_KEY.length : 0
-});
+  try {
+    const config = JSON.parse(savedConfig);
+    return {
+      url: config.url,
+      database: config.database,
+      username: config.username,
+      apiKey: config.apiKey
+    };
+  } catch (err) {
+    logger.error('CONFIG', 'Failed to parse Odoo config from localStorage', { error: err.message });
+    return null;
+  }
+};
 
 /**
  * Odoo Service - READ-ONLY Integration
@@ -37,26 +47,34 @@ class OdooService {
    */
   async authenticate() {
     logger.info('AUTH', 'Starting authentication process...');
+
+    // Get configuration from localStorage
+    const config = getOdooConfig();
+    if (!config) {
+      logger.error('AUTH', 'No Odoo configuration found in localStorage');
+      throw new Error('Configurazione Odoo non trovata. Configura Odoo prima di sincronizzare.');
+    }
+
     logger.debug('AUTH', 'Authentication details', {
-      url: `${ODOO_URL}/web/session/authenticate`,
-      database: ODOO_DB,
-      username: ODOO_USERNAME,
-      hasApiKey: !!ODOO_API_KEY,
-      apiKeyPrefix: ODOO_API_KEY ? ODOO_API_KEY.substring(0, 3) + '...' : 'NONE'
+      url: `${config.url}/web/session/authenticate`,
+      database: config.database,
+      username: config.username,
+      hasApiKey: !!config.apiKey,
+      apiKeyPrefix: config.apiKey ? config.apiKey.substring(0, 3) + '...' : 'NONE'
     });
 
     try {
       const requestPayload = {
         jsonrpc: '2.0',
         params: {
-          db: ODOO_DB,
-          login: ODOO_USERNAME,
-          password: ODOO_API_KEY,
+          db: config.database,
+          login: config.username,
+          password: config.apiKey,
         },
       };
 
       logger.debug('AUTH', 'Sending authentication request', {
-        url: `${ODOO_URL}/web/session/authenticate`,
+        url: `${config.url}/web/session/authenticate`,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         withCredentials: true,
@@ -71,7 +89,7 @@ class OdooService {
 
       const startTime = Date.now();
       const response = await axios.post(
-        `${ODOO_URL}/web/session/authenticate`,
+        `${config.url}/web/session/authenticate`,
         requestPayload,
         {
           headers: {
@@ -139,7 +157,7 @@ class OdooService {
         logger.error('AUTH', 'No response received from server', {
           message: error.message,
           code: error.code,
-          url: `${ODOO_URL}/web/session/authenticate`
+          url: config ? `${config.url}/web/session/authenticate` : 'N/A'
         });
       } else {
         logger.error('AUTH', 'Error setting up authentication request', {
@@ -152,17 +170,17 @@ class OdooService {
       if (error.code === 'ENOTFOUND') {
         logger.error('AUTH', 'DNS Resolution Failed', {
           message: 'Could not resolve hostname. Check if the Odoo URL is correct.',
-          url: ODOO_URL
+          url: config ? config.url : 'N/A'
         });
       } else if (error.code === 'ECONNREFUSED') {
         logger.error('AUTH', 'Connection Refused', {
           message: 'Server refused the connection. Check if Odoo is running and accessible.',
-          url: ODOO_URL
+          url: config ? config.url : 'N/A'
         });
       } else if (error.code === 'ETIMEDOUT') {
         logger.error('AUTH', 'Connection Timeout', {
           message: 'Connection timed out. Check firewall, network, or IP restrictions.',
-          url: ODOO_URL
+          url: config ? config.url : 'N/A'
         });
       }
 
@@ -199,6 +217,13 @@ class OdooService {
       await this.authenticate();
     }
 
+    // Get configuration from localStorage
+    const config = getOdooConfig();
+    if (!config) {
+      logger.error('API_CALL', 'No Odoo configuration found in localStorage');
+      throw new Error('Configurazione Odoo non trovata. Configura Odoo prima di sincronizzare.');
+    }
+
     try {
       const requestPayload = {
         jsonrpc: '2.0',
@@ -212,14 +237,14 @@ class OdooService {
       };
 
       logger.info('API_CALL', `Calling ${model}.${method}`, {
-        url: `${ODOO_URL}/web/dataset/call_kw`,
+        url: `${config.url}/web/dataset/call_kw`,
         args: args,
         kwargs: kwargs
       });
 
       const startTime = Date.now();
       const response = await axios.post(
-        `${ODOO_URL}/web/dataset/call_kw`,
+        `${config.url}/web/dataset/call_kw`,
         requestPayload,
         {
           headers: {
