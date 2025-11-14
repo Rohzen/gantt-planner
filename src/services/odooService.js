@@ -3,10 +3,10 @@ import logger from './logger';
 
 /**
  * CORS Proxy configuration
- * Using allorigins.win as a free CORS proxy service
- * Alternative: https://corsproxy.io/?
+ * Using corsproxy.io as a reliable CORS proxy service
+ * This proxy properly handles CORS headers for cross-origin requests
  */
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const CORS_PROXY = 'https://corsproxy.io/?';
 
 /**
  * Get Odoo configuration from localStorage
@@ -38,11 +38,12 @@ const getOdooConfig = () => {
  */
 const buildUrl = (baseUrl, useCorsProxy = false) => {
   if (useCorsProxy) {
+    const proxyUrl = CORS_PROXY + baseUrl;
     logger.debug('PROXY', 'Using CORS proxy', {
       originalUrl: baseUrl,
-      proxyUrl: CORS_PROXY + encodeURIComponent(baseUrl)
+      proxyUrl: proxyUrl
     });
-    return CORS_PROXY + encodeURIComponent(baseUrl);
+    return proxyUrl;
   }
   return baseUrl;
 };
