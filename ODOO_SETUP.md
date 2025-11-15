@@ -98,11 +98,35 @@ If you see "Impossibile caricare i task da Odoo":
 3. Ensure your user has access to `project.task` model
 4. Check browser console for detailed error messages
 
-### CORS Issues
+### CORS Issues (CRITICAL for GitHub Pages deployment)
 
-If you encounter CORS errors:
-- The Odoo server must allow requests from your development origin
-- Contact your Odoo administrator to configure CORS settings
+**Important:** Public CORS proxies (like corsproxy.io) **DO NOT WORK** with Odoo because they cannot forward session cookies!
+
+#### Recommended Solution: Configure CORS on Your Odoo Server
+
+1. **Install the CORS module** on your Odoo instance:
+   - Search for "web_cors" in Odoo Apps
+   - Install it (may require developer mode)
+
+2. **Configure CORS settings**:
+   - Go to Settings → Technical → Parameters → System Parameters
+   - Add/modify parameter: `web.cors.allowed_origins`
+   - Set value to your GitHub Pages URL: `https://rohzen.github.io`
+   - Save
+
+3. **In the app configuration**:
+   - Open "Config Odoo" button
+   - **UNCHECK** "Usa CORS Proxy"
+   - Save configuration
+
+#### Alternative: Deploy Your Own CORS Proxy
+
+If you cannot modify Odoo server settings:
+1. Deploy the custom proxy in `/cors-proxy` folder to Vercel/Netlify
+2. Use your proxy URL in "Config Odoo" dialog
+3. See `/cors-proxy/README.md` for deployment instructions
+
+The custom proxy properly forwards cookies and maintains Odoo sessions.
 
 ### No Tasks Displayed
 

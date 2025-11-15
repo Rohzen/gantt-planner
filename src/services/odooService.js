@@ -91,6 +91,7 @@ class OdooService {
     try {
       const requestPayload = {
         jsonrpc: '2.0',
+        method: 'call',
         params: {
           db: config.database,
           login: config.username,
@@ -291,13 +292,27 @@ class OdooService {
       const startTime = Date.now();
       const requestUrl = buildUrl(targetUrl, config.useCorsProxy, config.corsProxyUrl);
 
+      // Prepare headers - include session cookie if available
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // If we have a session_id and using CORS proxy, try to pass it as a header
+      // Note: Most CORS proxies don't support cookies, so this may not work
+      if (this.sessionId && config.useCorsProxy) {
+        headers['X-Openerp-Session-Id'] = this.sessionId;
+        // Also try setting Cookie header (may be stripped by proxy)
+        headers['Cookie'] = `session_id=${this.sessionId}`;
+        logger.debug('API_CALL', 'Attempting to pass session through proxy', {
+          sessionIdPrefix: this.sessionId.substring(0, 10) + '...'
+        });
+      }
+
       const response = await axios.post(
         requestUrl,
         requestPayload,
         {
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: headers,
           withCredentials: !config.useCorsProxy, // Don't send credentials through proxy
         }
       );

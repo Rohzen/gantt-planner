@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText, LogOut } from 'lucide-react';
+import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText, LogOut, Settings } from 'lucide-react';
 import odooService from './services/odooService';
 import LogViewer from './components/LogViewer';
 import PasswordAuth from './components/PasswordAuth';
@@ -13,6 +13,9 @@ const GanttPlanner = () => {
   const [lastSync, setLastSync] = useState(null);
   const [showLogViewer, setShowLogViewer] = useState(false);
   const [showOdooConfig, setShowOdooConfig] = useState(false);
+  const [showSyncOptions, setShowSyncOptions] = useState(false);
+  const [syncMode, setSyncMode] = useState('replace');
+  const [syncSuccess, setSyncSuccess] = useState(null);
 
   const [selectedResource, setSelectedResource] = useState('Tutti');
   const [selectedType, setSelectedType] = useState('Tutti');
@@ -93,6 +96,7 @@ const GanttPlanner = () => {
   const loadTasksFromOdoo = async () => {
     setLoading(true);
     setError(null);
+    setSyncSuccess(null);
     try {
       const formattedTasks = await odooService.getFormattedTasks();
       // Ensure each task has originalDuration set
@@ -100,8 +104,30 @@ const GanttPlanner = () => {
         ...task,
         originalDuration: task.originalDuration || task.duration
       }));
-      setTasks(tasksWithOriginalDuration);
+
+      if (syncMode === 'replace') {
+        setTasks(tasksWithOriginalDuration);
+      } else {
+        // Append mode: merge with existing tasks, avoiding duplicates by odooId
+        const existingOdooIds = new Set(tasks.filter(t => t.odooId).map(t => t.odooId));
+        const newTasks = tasksWithOriginalDuration.filter(t => !existingOdooIds.has(t.odooId));
+
+        // Update maxId for new tasks
+        let maxId = Math.max(...tasks.map(t => t.id), 0);
+        const updatedNewTasks = newTasks.map(task => ({
+          ...task,
+          id: ++maxId
+        }));
+
+        setTasks([...tasks, ...updatedNewTasks]);
+      }
+
       setLastSync(new Date());
+      setSyncSuccess(`${tasksWithOriginalDuration.length} task sincronizzati da Odoo (${syncMode === 'replace' ? 'sostituiti' : 'aggiunti'})`);
+      setShowSyncOptions(false);
+
+      // Clear success message after 5 seconds
+      setTimeout(() => setSyncSuccess(null), 5000);
     } catch (err) {
       console.error('Failed to load tasks from Odoo:', err);
       setError(err.message || 'Impossibile caricare i task da Odoo. Verifica la configurazione.');
@@ -117,14 +143,14 @@ const GanttPlanner = () => {
       // No config found, show dialog
       setShowOdooConfig(true);
     } else {
-      // Config exists, proceed with sync
-      loadTasksFromOdoo();
+      // Config exists, show sync options
+      setShowSyncOptions(true);
     }
   };
 
   const handleOdooConfigSave = (config) => {
-    // After saving config, trigger sync
-    loadTasksFromOdoo();
+    // After saving config, show sync options
+    setShowSyncOptions(true);
   };
 
   const calculateEndDate = (startDate, duration) => {
@@ -591,6 +617,14 @@ const GanttPlanner = () => {
               Log
             </button>
             <button
+              onClick={() => setShowOdooConfig(true)}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+              title="Configura credenziali Odoo"
+            >
+              <Settings className="w-4 h-4" />
+              Config Odoo
+            </button>
+            <button
               onClick={handleOdooSync}
               disabled={loading}
               className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:bg-purple-300"
@@ -640,9 +674,62 @@ const GanttPlanner = () => {
           </div>
         )}
 
+        {syncSuccess && (
+          <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+            <div className="flex items-center gap-2 text-green-800">
+              <RefreshCw className="w-5 h-5" />
+              <span className="font-semibold">Sincronizzazione completata!</span>
+              <span>{syncSuccess}</span>
+            </div>
+          </div>
+        )}
+
         {lastSync && !error && (
           <div className="mb-2 text-sm text-gray-600">
             Ultima sincronizzazione: {lastSync.toLocaleString('it-IT')}
+          </div>
+        )}
+
+        {showSyncOptions && (
+          <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">Opzioni Sincronizzazione Odoo</h3>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="syncReplace"
+                  name="syncMode"
+                  value="replace"
+                  checked={syncMode === 'replace'}
+                  onChange={(e) => setSyncMode(e.target.value)}
+                />
+                <label htmlFor="syncReplace" className="text-sm">Sostituisci tutto (elimina task esistenti)</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  id="syncAppend"
+                  name="syncMode"
+                  value="append"
+                  checked={syncMode === 'append'}
+                  onChange={(e) => setSyncMode(e.target.value)}
+                />
+                <label htmlFor="syncAppend" className="text-sm">Aggiungi (mantieni task esistenti)</label>
+              </div>
+              <button
+                onClick={loadTasksFromOdoo}
+                disabled={loading}
+                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:bg-purple-300"
+              >
+                {loading ? 'Sincronizzazione...' : 'Sincronizza Ora'}
+              </button>
+              <button
+                onClick={() => setShowSyncOptions(false)}
+                className="bg-gray-300 text-gray-700 px-3 py-2 rounded hover:bg-gray-400"
+              >
+                Annulla
+              </button>
+            </div>
           </div>
         )}
 
