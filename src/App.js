@@ -633,6 +633,15 @@ const GanttPlanner = () => {
     return dates;
   }, [timelineRange]);
 
+  // Helper function to get week number
+  const getWeekNumber = (date) => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  };
+
   // Group dates for header display based on time scale
   const headerGroups = useMemo(() => {
     if (timeScale === 'day') {
@@ -770,15 +779,6 @@ const GanttPlanner = () => {
 
     return [];
   }, [dateRange, timeScale, dayWidth]);
-
-  // Helper function to get week number
-  const getWeekNumber = (date) => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  };
 
   const getTaskPosition = (task) => {
     const startDate = new Date(task.startDate + 'T00:00:00');
