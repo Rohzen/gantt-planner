@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText, LogOut, Settings } from 'lucide-react';
+import { Calendar, Plus, Filter, Clock, AlertCircle, Upload, Download, RefreshCw, FileText, LogOut, Settings, LayoutList, Users } from 'lucide-react';
 import odooService from './services/odooService';
 import LogViewer from './components/LogViewer';
 import PasswordAuth from './components/PasswordAuth';
@@ -24,6 +24,9 @@ const GanttPlanner = () => {
   const [showAddTask, setShowAddTask] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadMode, setUploadMode] = useState('replace');
+  const [viewMode, setViewMode] = useState('task'); // 'task' or 'resource'
+  const [timeScale, setTimeScale] = useState('day'); // 'day', 'week', 'month', 'year'
+  const [normalizeStartDates, setNormalizeStartDates] = useState(false);
   const [newTask, setNewTask] = useState({
     name: '',
     resource: 'Roberto',
@@ -252,8 +255,59 @@ const GanttPlanner = () => {
     if (selectedType !== 'Tutti') {
       filtered = filtered.filter(t => t.type === selectedType);
     }
+
+    // Normalize start dates if flag is active
+    if (normalizeStartDates) {
+      const today = new Date().toISOString().split('T')[0];
+      filtered = filtered.map(task => {
+        const taskStartDate = task.startDate;
+        if (taskStartDate < today) {
+          // Calculate original end date
+          const originalEndDate = calculateEndDate(task.startDate, task.duration);
+
+          // If the task already ended, skip it or set minimal duration
+          if (originalEndDate < today) {
+            return {
+              ...task,
+              startDate: today,
+              duration: 0 // Task already completed
+            };
+          }
+
+          // Calculate remaining days from today to original end date
+          const todayDate = new Date(today);
+          const endDate = new Date(originalEndDate);
+          const diffTime = endDate - todayDate;
+          const remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include end date
+
+          return {
+            ...task,
+            startDate: today,
+            duration: Math.max(1, remainingDays) // At least 1 day
+          };
+        }
+        return task;
+      });
+    }
+
     return filtered;
-  }, [tasks, selectedResource, selectedType]);
+  }, [tasks, selectedResource, selectedType, normalizeStartDates]);
+
+  // Group tasks by resource for Resource Timeline view
+  const tasksByResource = useMemo(() => {
+    const grouped = {};
+    filteredTasks.forEach(task => {
+      if (!grouped[task.resource]) {
+        grouped[task.resource] = [];
+      }
+      grouped[task.resource].push(task);
+    });
+    // Sort tasks within each resource by start date
+    Object.keys(grouped).forEach(resource => {
+      grouped[resource].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+    });
+    return grouped;
+  }, [filteredTasks]);
 
   const getAvailableWeeks = useMemo(() => {
     if (filteredTasks.length === 0) return [];
@@ -569,6 +623,163 @@ const GanttPlanner = () => {
     return dates;
   }, [timelineRange]);
 
+  // Calculate day width based on time scale
+  const dayWidth = useMemo(() => {
+    switch (timeScale) {
+      case 'week': return 40 / 7; // Smaller for weekly view
+      case 'month': return 40 / 30; // Even smaller for monthly view
+      case 'year': return 40 / 365; // Tiny for yearly view
+      default: return 40; // Day view
+    }
+  }, [timeScale]);
+
+  // Group dates for header display based on time scale
+  const headerGroups = useMemo(() => {
+    if (timeScale === 'day') {
+      // For day view, show each day individually
+      return dateRange.map(date => ({
+        label: date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }),
+        sublabel: date.toLocaleDateString('it-IT', { weekday: 'short' }),
+        width: dayWidth,
+        isWeekend: date.getDay() === 0 || date.getDay() === 6
+      }));
+    }
+
+    if (timeScale === 'week') {
+      // Group by weeks
+      const groups = [];
+      let currentWeek = null;
+      let weekStart = null;
+      let weekDays = 0;
+
+      dateRange.forEach((date, idx) => {
+        const weekNum = getWeekStart(date).toISOString().split('T')[0];
+
+        if (weekNum !== currentWeek) {
+          if (currentWeek !== null) {
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            groups.push({
+              label: `${weekStart.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}`,
+              sublabel: `Sett. ${getWeekNumber(weekStart)}`,
+              width: weekDays * dayWidth,
+              isWeekend: false
+            });
+          }
+          currentWeek = weekNum;
+          weekStart = new Date(date);
+          weekDays = 1;
+        } else {
+          weekDays++;
+        }
+      });
+
+      // Add last week
+      if (currentWeek !== null) {
+        groups.push({
+          label: `${weekStart.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}`,
+          sublabel: `Sett. ${getWeekNumber(weekStart)}`,
+          width: weekDays * dayWidth,
+          isWeekend: false
+        });
+      }
+
+      return groups;
+    }
+
+    if (timeScale === 'month') {
+      // Group by months
+      const groups = [];
+      let currentMonth = null;
+      let monthDays = 0;
+
+      dateRange.forEach((date, idx) => {
+        const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+
+        if (monthKey !== currentMonth) {
+          if (currentMonth !== null) {
+            groups.push({
+              label: dateRange[idx - 1].toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }),
+              sublabel: '',
+              width: monthDays * dayWidth,
+              isWeekend: false
+            });
+          }
+          currentMonth = monthKey;
+          monthDays = 1;
+        } else {
+          monthDays++;
+        }
+      });
+
+      // Add last month
+      if (currentMonth !== null) {
+        groups.push({
+          label: dateRange[dateRange.length - 1].toLocaleDateString('it-IT', { month: 'long', year: 'numeric' }),
+          sublabel: '',
+          width: monthDays * dayWidth,
+          isWeekend: false
+        });
+      }
+
+      return groups;
+    }
+
+    if (timeScale === 'year') {
+      // Group by years/quarters
+      const groups = [];
+      let currentQuarter = null;
+      let quarterDays = 0;
+
+      dateRange.forEach((date, idx) => {
+        const quarter = Math.floor(date.getMonth() / 3) + 1;
+        const quarterKey = `${date.getFullYear()}-Q${quarter}`;
+
+        if (quarterKey !== currentQuarter) {
+          if (currentQuarter !== null) {
+            const prevDate = dateRange[idx - 1];
+            const prevQuarter = Math.floor(prevDate.getMonth() / 3) + 1;
+            groups.push({
+              label: `Q${prevQuarter} ${prevDate.getFullYear()}`,
+              sublabel: '',
+              width: quarterDays * dayWidth,
+              isWeekend: false
+            });
+          }
+          currentQuarter = quarterKey;
+          quarterDays = 1;
+        } else {
+          quarterDays++;
+        }
+      });
+
+      // Add last quarter
+      if (currentQuarter !== null) {
+        const lastDate = dateRange[dateRange.length - 1];
+        const lastQuarter = Math.floor(lastDate.getMonth() / 3) + 1;
+        groups.push({
+          label: `Q${lastQuarter} ${lastDate.getFullYear()}`,
+          sublabel: '',
+          width: quarterDays * dayWidth,
+          isWeekend: false
+        });
+      }
+
+      return groups;
+    }
+
+    return [];
+  }, [dateRange, timeScale, dayWidth]);
+
+  // Helper function to get week number
+  const getWeekNumber = (date) => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  };
+
   const getTaskPosition = (task) => {
     const startDate = new Date(task.startDate + 'T00:00:00');
     const minDate = new Date(timelineRange.minDate);
@@ -578,8 +789,6 @@ const GanttPlanner = () => {
     const daysDiff = Math.round((startDate - minDate) / (1000 * 60 * 60 * 24));
     return Math.max(0, daysDiff);
   };
-
-  const dayWidth = 40;
 
   const getTypeColor = (type) => {
     return type === 'Sviluppo' ? 'bg-green-500' : 'bg-blue-500';
@@ -787,9 +996,43 @@ const GanttPlanner = () => {
           </div>
         )}
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-600" />
+            <label className="text-sm font-medium text-gray-700">Vista:</label>
+            <div className="flex border border-gray-300 rounded overflow-hidden">
+              <button
+                onClick={() => setViewMode('task')}
+                className={`flex items-center gap-1 px-3 py-1 text-sm ${viewMode === 'task' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+              >
+                <LayoutList className="w-4 h-4" />
+                Attività
+              </button>
+              <button
+                onClick={() => setViewMode('resource')}
+                className={`flex items-center gap-1 px-3 py-1 text-sm border-l border-gray-300 ${viewMode === 'resource' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+              >
+                <Users className="w-4 h-4" />
+                Risorse
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Scala:</label>
+            <select
+              value={timeScale}
+              onChange={(e) => setTimeScale(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-1 text-sm"
+            >
+              <option value="day">Giorno</option>
+              <option value="week">Settimana</option>
+              <option value="month">Mese</option>
+              <option value="year">Anno</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Risorsa:</label>
             <select
               value={selectedResource}
@@ -842,6 +1085,19 @@ const GanttPlanner = () => {
                 <option key={week.value} value={week.value}>{week.label}</option>
               ))}
             </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="normalizeStartDates"
+              checked={normalizeStartDates}
+              onChange={(e) => setNormalizeStartDates(e.target.checked)}
+              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <label htmlFor="normalizeStartDates" className="text-sm font-medium text-gray-700">
+              Normalizza date inizio
+            </label>
           </div>
 
           {selectedResource !== 'Tutti' && (
@@ -967,67 +1223,153 @@ const GanttPlanner = () => {
         <div className="inline-block min-w-full">
           <div className="sticky top-0 bg-white border-b border-gray-300 z-10 flex">
             <div className="w-96 border-r border-gray-300 p-2 bg-gray-100">
-              <span className="font-semibold text-sm text-gray-700">Attività</span>
+              <span className="font-semibold text-sm text-gray-700">
+                {viewMode === 'resource' ? 'Risorsa' : 'Attività'}
+              </span>
             </div>
             <div className="flex">
-              {dateRange.map((date, idx) => {
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+              {headerGroups.map((group, idx) => {
                 return (
                   <div
                     key={idx}
-                    style={{ width: `${dayWidth}px` }}
-                    className={`border-r border-gray-200 p-1 text-center ${isWeekend ? 'bg-gray-100' : 'bg-white'}`}
+                    style={{ width: `${group.width}px`, minWidth: `${group.width}px` }}
+                    className={`border-r border-gray-200 p-1 text-center ${group.isWeekend ? 'bg-gray-100' : 'bg-white'}`}
                   >
                     <div className="text-xs font-medium text-gray-600">
-                      {date.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}
+                      {group.label}
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {date.toLocaleDateString('it-IT', { weekday: 'short' })}
-                    </div>
+                    {group.sublabel && (
+                      <div className="text-xs text-gray-500">
+                        {group.sublabel}
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {filteredTasks.map((task, idx) => {
-            const position = getTaskPosition(task);
-            
-            return (
-              <div key={task.id} className={`flex border-b border-gray-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                <div className="w-96 border-r border-gray-300 p-2">
-                  <div className="text-sm font-medium text-gray-800">{task.name}</div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-gray-500">{task.resource}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${task.type === 'Sviluppo' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {task.type}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex relative" style={{ height: '60px' }}>
-                  {dateRange.map((date, dateIdx) => {
-                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                    return (
+          {viewMode === 'task' ? (
+            // TASK VIEW - Original view showing one row per task
+            <>
+              {filteredTasks.map((task, idx) => {
+                const position = getTaskPosition(task);
+
+                return (
+                  <div key={task.id} className={`flex border-b border-gray-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    <div className="w-96 border-r border-gray-300 p-2">
+                      <div className="text-sm font-medium text-gray-800">{task.name}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">{task.resource}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${task.type === 'Sviluppo' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {task.type}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex relative" style={{ height: '60px' }}>
+                      {dateRange.map((date, dateIdx) => {
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                        return (
+                          <div
+                            key={dateIdx}
+                            style={{ width: `${dayWidth}px` }}
+                            className={`border-r border-gray-200 ${isWeekend ? 'bg-gray-100' : ''}`}
+                          />
+                        );
+                      })}
                       <div
-                        key={dateIdx}
-                        style={{ width: `${dayWidth}px` }}
-                        className={`border-r border-gray-200 ${isWeekend ? 'bg-gray-100' : ''}`}
-                      />
-                    );
-                  })}
-                  <div
-                    className={`absolute top-2 h-10 ${getTypeColor(task.type)} rounded shadow-sm flex items-center justify-center text-white text-xs font-medium px-2`}
-                    style={{
-                      left: `${position * dayWidth}px`,
-                      width: `${task.duration * dayWidth - 4}px`
-                    }}
-                  >
-                    {task.duration}g
+                        className={`absolute top-2 h-10 ${getTypeColor(task.type)} rounded shadow-sm flex items-center justify-center text-white text-xs font-medium px-2`}
+                        style={{
+                          left: `${position * dayWidth}px`,
+                          width: `${task.duration * dayWidth - 4}px`
+                        }}
+                      >
+                        {task.duration}g
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </>
+          ) : (
+            // RESOURCE VIEW - Show one row per resource with all their tasks
+            <>
+              {Object.keys(tasksByResource).sort().map((resource, idx) => {
+                const resourceTasks = tasksByResource[resource];
+                const taskCount = resourceTasks.length;
+
+                // Check for overlapping tasks and calculate lanes
+                const lanes = [];
+                resourceTasks.forEach(task => {
+                  const taskStart = new Date(task.startDate);
+                  const taskEnd = new Date(calculateEndDate(task.startDate, task.duration));
+
+                  // Find the first lane where this task doesn't overlap
+                  let laneIndex = 0;
+                  while (laneIndex < lanes.length) {
+                    const overlaps = lanes[laneIndex].some(existingTask => {
+                      const existingStart = new Date(existingTask.startDate);
+                      const existingEnd = new Date(calculateEndDate(existingTask.startDate, existingTask.duration));
+                      return !(taskEnd < existingStart || taskStart > existingEnd);
+                    });
+                    if (!overlaps) break;
+                    laneIndex++;
+                  }
+
+                  if (!lanes[laneIndex]) lanes[laneIndex] = [];
+                  lanes[laneIndex].push(task);
+                  task._lane = laneIndex; // Store lane index for rendering
+                });
+
+                const rowHeight = Math.max(80, (lanes.length * 20) + 20); // Dynamic height based on lanes
+
+                return (
+                  <div key={resource} className={`flex border-b border-gray-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                    <div className="w-96 border-r border-gray-300 p-2">
+                      <div className="text-sm font-bold text-gray-800">{resource}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs text-gray-500">{taskCount} attività</span>
+                      </div>
+                    </div>
+                    <div className="flex relative" style={{ minHeight: `${rowHeight}px` }}>
+                      {dateRange.map((date, dateIdx) => {
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                        return (
+                          <div
+                            key={dateIdx}
+                            style={{ width: `${dayWidth}px` }}
+                            className={`border-r border-gray-200 ${isWeekend ? 'bg-gray-100' : ''}`}
+                          />
+                        );
+                      })}
+                      {/* Render all tasks for this resource */}
+                      {resourceTasks.map((task, taskIdx) => {
+                        const position = getTaskPosition(task);
+                        const laneIndex = task._lane || 0;
+                        const verticalOffset = laneIndex * 20; // 20px per lane
+
+                        return (
+                          <div
+                            key={task.id}
+                            className={`absolute h-4 ${getTypeColor(task.type)} rounded shadow-sm flex items-center justify-start text-white text-xs font-medium px-1 cursor-pointer hover:opacity-90`}
+                            style={{
+                              top: `${8 + verticalOffset}px`,
+                              left: `${position * dayWidth}px`,
+                              width: `${Math.max(task.duration * dayWidth - 4, 20)}px`,
+                              zIndex: taskIdx
+                            }}
+                            title={`${task.name}\n${task.type}\n${task.duration} giorni\nInizio: ${new Date(task.startDate).toLocaleDateString('it-IT')}`}
+                          >
+                            <span className="truncate text-xs">{task.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       </div>
       )}
