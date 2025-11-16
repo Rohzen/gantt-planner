@@ -610,6 +610,16 @@ const GanttPlanner = () => {
     return { minDate, maxDate };
   }, [filteredTasks, selectedWeek]);
 
+  // Calculate day width based on time scale (moved before dateRange to fix initialization order)
+  const dayWidth = useMemo(() => {
+    switch (timeScale) {
+      case 'week': return 40 / 7; // Smaller for weekly view
+      case 'month': return 40 / 30; // Even smaller for monthly view
+      case 'year': return 40 / 365; // Tiny for yearly view
+      default: return 40; // Day view
+    }
+  }, [timeScale]);
+
   const dateRange = useMemo(() => {
     const { minDate, maxDate } = timelineRange;
     const dates = [];
@@ -622,16 +632,6 @@ const GanttPlanner = () => {
 
     return dates;
   }, [timelineRange]);
-
-  // Calculate day width based on time scale
-  const dayWidth = useMemo(() => {
-    switch (timeScale) {
-      case 'week': return 40 / 7; // Smaller for weekly view
-      case 'month': return 40 / 30; // Even smaller for monthly view
-      case 'year': return 40 / 365; // Tiny for yearly view
-      default: return 40; // Day view
-    }
-  }, [timeScale]);
 
   // Group dates for header display based on time scale
   const headerGroups = useMemo(() => {
